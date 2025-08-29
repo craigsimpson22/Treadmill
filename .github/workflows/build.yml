@@ -179,22 +179,22 @@ jobs:
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
               android:width="108dp" android:height="108dp"
               android:viewportWidth="108" android:viewportHeight="108">
-              <!-- Simple runner silhouette (stroke for crispness) -->
+              <!-- Simple runner silhouette -->
               <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="6"
-                  android:strokeLineCap="round"
-                  android:pathData="M54,26 m -8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"/>
+                    android:strokeLineCap="round"
+                    android:pathData="M54,26 m -8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0"/>
               <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="8"
-                  android:strokeLineCap="round" android:pathData="M54,34 L64,48"/>
+                    android:strokeLineCap="round" android:pathData="M54,34 L64,48"/>
               <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="8"
-                  android:strokeLineCap="round" android:pathData="M54,38 L44,48"/>
+                    android:strokeLineCap="round" android:pathData="M54,38 L44,48"/>
               <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="8"
-                  android:strokeLineCap="round" android:pathData="M64,48 L76,64"/>
+                    android:strokeLineCap="round" android:pathData="M64,48 L76,64"/>
               <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="8"
-                  android:strokeLineCap="round" android:pathData="M54,50 L44,66"/>
+                    android:strokeLineCap="round" android:pathData="M54,50 L44,66"/>
           </vector>
           EOF
 
-          # --------- FIXED MainActivity (minOf + coerceIn) ----------
+          # --------- FIXED MainActivity ----------
           cat > IntervalRunner/app/src/main/java/com/craig/intervalrunner/MainActivity.kt << 'EOF'
           package com.craig.intervalrunner
 
@@ -222,10 +222,10 @@ jobs:
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.unit.dp   // ✅ dp import restored
           import androidx.compose.ui.unit.sp
           import kotlinx.coroutines.delay
           import java.util.Locale
-          import kotlin.math.roundToInt
 
           data class Segment(val kind: Kind, val lengthSec: Int) {
               enum class Kind { FAST, SLOW }
@@ -328,7 +328,7 @@ jobs:
 
               LaunchedEffect(running, secLeft, currentIndex, segments) {
                   while (running) {
-                      kotlinx.coroutines.delay(1000)
+                      delay(1000)
                       secLeft -= 1
                       if (currentIndex == -1 && secLeft <= 0) {
                           currentIndex = 0; secLeft = segments.getOrNull(0)?.lengthSec ?: 0
@@ -349,7 +349,8 @@ jobs:
                   currentIndex >= segments.size -> totalSec
                   else -> segments.take(currentIndex).sumOf { it.lengthSec } + (segments[currentIndex].lengthSec - secLeft)
               }
-              val pct = if (totalSec == 0) 0 else (elapsedSec * 100 / totalSec).coerceIn(0, 100) // ✅ no min/max overloads
+              val pct = if (totalSec == 0) 0 else (elapsedSec * 100 / totalSec).coerceIn(0, 100)
+
               val currentKind = when {
                   currentIndex == -1 -> "PREP"
                   currentIndex >= segments.size -> "DONE"
@@ -384,8 +385,9 @@ jobs:
 
                       Card(modifier = Modifier.weight(1f).fillMaxWidth()) {
                           Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                              val badgeColor =
-                                  when (currentKind) { "FAST" -> Color(0xFF34D399); "SLOW" -> Color(0xFF60A5FA); "PREP" -> Color(0xFFF59E0B); else -> Color(0xFFA78BFA) }
+                              val badgeColor = when (currentKind) {
+                                  "FAST" -> Color(0xFF34D399); "SLOW" -> Color(0xFF60A5FA); "PREP" -> Color(0xFFF59E0B); else -> Color(0xFFA78BFA)
+                              }
                               AssistChip(
                                   onClick = {},
                                   label = { Text(currentKind) },
@@ -438,10 +440,11 @@ jobs:
           @Composable
           private fun ResponsiveTimer(seconds: Int, label: String, modifier: Modifier = Modifier) {
               BoxWithConstraints(modifier = modifier) {
-                  // ✅ Use minOf for Dp; min/max from kotlin.math don't work with Dp
-                  val minSide = minOf(maxWidth, maxHeight)
-                  val timeSize = (minSide.value * 0.28f).sp.coerceAtLeast(42.sp)
-                  val labelSize = (minSide.value * 0.08f).sp.coerceAtLeast(14.sp)
+                  val minSide = minOf(maxWidth, maxHeight)                    // Dp
+                  val rawTime = (minSide.value * 0.28f).sp
+                  val timeSize = if (rawTime < 42.sp) 42.sp else rawTime      // ✅ no coerceAtLeast on TextUnit
+                  val rawLabel = (minSide.value * 0.08f).sp
+                  val labelSize = if (rawLabel < 14.sp) 14.sp else rawLabel   // ✅
 
                   Column(horizontalAlignment = Alignment.CenterHorizontally) {
                       Text(text = mmss(seconds), fontSize = timeSize, fontWeight = FontWeight.ExtraBold, textAlign = TextAlign.Center)
