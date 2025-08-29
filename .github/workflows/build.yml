@@ -18,6 +18,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: 'gradle'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -78,19 +79,23 @@ jobs:
                   versionName = "1.0"
               }
 
-              buildFeatures {
-                  compose = true
-              }
+              buildFeatures { compose = true }
 
               composeOptions {
-                  kotlinCompilerExtensionVersion = "1.5.14"
+                  kotlinCompilerExtensionVersion = "1.5.14" // Kotlin 1.9.24 compat
               }
 
-              packaging {
-                  resources {
-                      excludes += "/META-INF/{AL2.0,LGPL2.1}"
-                  }
+              // Align Java bytecode to 17
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
               }
+          }
+
+          // Align Kotlin to 17 + toolchain
+          kotlin { jvmToolchain(17) }
+          tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+              kotlinOptions.jvmTarget = "17"
           }
 
           dependencies {
@@ -108,7 +113,7 @@ jobs:
           EOF
 
           cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx2g -Dkotlin.daemon.heap.size=1g -Dfile.encoding=UTF-8
+          org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
           android.useAndroidX=true
           android.enableJetifier=false
           EOF
@@ -152,6 +157,7 @@ jobs:
           import androidx.compose.runtime.saveable.rememberSaveable
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.alpha
           import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.platform.LocalContext
@@ -164,6 +170,15 @@ jobs:
           import kotlinx.coroutines.delay
           import kotlinx.coroutines.launch
 
+          /**
+           * Single-file Compose app.
+           * - Safe insets (systemBarsPadding, navigationBarsPadding)
+           * - Large timer text
+           * - Top-right status pill
+           * - Inputs persist via SharedPreferences
+           * - Prep default = 30s
+           * - Sequence chips
+           */
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -492,8 +507,13 @@ jobs:
       - name: Accept Android SDK licenses
         run: yes | sdkmanager --licenses
 
+      - name: Sanity check versions
+        run: |
+          java -version
+          ./gradlew -version
+
       - name: Build Debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
