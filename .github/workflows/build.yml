@@ -1,4 +1,4 @@
-name: Build Interval Runner APK (phone-only, one file)
+name: Build Android APK (Interval Runner - single file)
 
 on:
   workflow_dispatch:
@@ -10,94 +10,87 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK packages
+      - name: Install Gradle 8.7
         run: |
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o gradle.zip
+          unzip -q gradle.zip -d $HOME/gradle
+          echo "$HOME/gradle/gradle-8.7/bin" >> $GITHUB_PATH
 
-      - name: Create Android project files
+      - name: Generate Android project files
+        shell: bash
         run: |
-          set -e
-          mkdir -p IntervalRunner/app/src/main/java/com/craig/intervalrunner
-          mkdir -p IntervalRunner/app/src/main/res/values
-          mkdir -p IntervalRunner/app/src/main/res/mipmap-anydpi-v26
-          mkdir -p IntervalRunner/app/src/main/res/drawable
+          set -euo pipefail
 
-          cat > IntervalRunner/settings.gradle.kts << 'EOF'
+          mkdir -p app/src/main/java/com/craig/intervalrunner
+          mkdir -p app/src/main/res/{drawable,mipmap-anydpi-v26,values}
+          touch build.gradle.kts
+
+          cat > settings.gradle.kts <<'EOF'
           pluginManagement {
-              repositories { gradlePluginPortal(); google(); mavenCentral() }
+            repositories {
+              gradlePluginPortal()
+              google()
+              mavenCentral()
+            }
+            plugins {
+              id("com.android.application") version "8.4.2"
+              id("org.jetbrains.kotlin.android") version "1.9.24"
+            }
           }
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories { google(); mavenCentral() }
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+              google()
+              mavenCentral()
+            }
           }
           rootProject.name = "IntervalRunner"
           include(":app")
           EOF
 
-          cat > IntervalRunner/build.gradle.kts << 'EOF'
-          plugins {
-              id("com.android.application") version "8.5.0" apply false
-              kotlin("android") version "1.9.24" apply false
-          }
-          EOF
-
-          cat > IntervalRunner/gradle.properties << 'EOF'
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          kotlin.code.style=official
-          android.nonTransitiveRClass=true
-          EOF
-
-          cat > IntervalRunner/app/build.gradle.kts << 'EOF'
+          cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
-              kotlin("android")
+              id("org.jetbrains.kotlin.android")
           }
 
           android {
               namespace = "com.craig.intervalrunner"
-              compileSdk = 35
+              compileSdk = 34
 
               defaultConfig {
                   applicationId = "com.craig.intervalrunner"
-                  minSdk = 26
-                  targetSdk = 35
+                  minSdk = 24
+                  targetSdk = 34
                   versionCode = 1
-                  versionName = "1.0.0"
-                  testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+                  versionName = "1.0"
               }
 
-              // Ensure Java/Kotlin use JVM 17
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
+              buildFeatures {
+                  compose = true
               }
-              kotlinOptions { jvmTarget = "17" }
 
-              buildTypes {
-                  release {
-                      isMinifyEnabled = false
-                      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+              composeOptions {
+                  kotlinCompilerExtensionVersion = "1.5.14"
+              }
+
+              packaging {
+                  resources {
+                      excludes += "/META-INF/{AL2.0,LGPL2.1}"
                   }
-                  debug { isMinifyEnabled = false }
               }
-
-              buildFeatures { compose = true }
-              composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
-
-              packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
           }
 
           dependencies {
@@ -105,437 +98,405 @@ jobs:
               implementation(composeBom)
               androidTestImplementation(composeBom)
 
-              // For Theme.Material3
-              implementation("com.google.android.material:material:1.12.0")
-
-              implementation("androidx.core:core-ktx:1.13.1")
               implementation("androidx.activity:activity-compose:1.9.0")
-              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-              implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")
               implementation("androidx.compose.ui:ui")
               implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.animation:animation")
               implementation("androidx.compose.ui:ui-tooling-preview")
               debugImplementation("androidx.compose.ui:ui-tooling")
-
-              testImplementation("junit:junit:4.13.2")
-              androidTestImplementation("androidx.test.ext:junit:1.2.1")
-              androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
-              androidTestImplementation("androidx.compose.ui:ui-test-junit4")
           }
           EOF
 
-          cat > IntervalRunner/app/proguard-rules.pro << 'EOF'
-          # No special rules required
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g -Dkotlin.daemon.heap.size=1g -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.enableJetifier=false
           EOF
 
-          # Manifest (use our crisp adaptive icon)
-          cat > IntervalRunner/app/src/main/AndroidManifest.xml << 'EOF'
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.VIBRATE" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-              <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-              <application
-                  android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
-                  android:label="@string/app_name"
-                  android:theme="@style/Theme.IntervalRunner">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="portrait">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-              </application>
+            <application
+                android:label="Interval Runner"
+                android:icon="@mipmap/ic_launcher"
+                android:roundIcon="@mipmap/ic_launcher_round"
+                android:allowBackup="true">
+              <activity
+                  android:name=".MainActivity"
+                  android:exported="true">
+                <intent-filter>
+                  <action android:name="android.intent.action.MAIN" />
+                  <category android:name="android.intent.category.LAUNCHER" />
+                </intent-filter>
+              </activity>
+            </application>
           </manifest>
           EOF
 
-          # Theme
-          cat > IntervalRunner/app/src/main/res/values/themes.xml << 'EOF'
-          <resources>
-              <style name="Theme.IntervalRunner" parent="Theme.Material3.DayNight.NoActionBar">
-                  <item name="android:statusBarColor">@android:color/transparent</item>
-                  <item name="android:navigationBarColor">@android:color/black</item>
-              </style>
-          </resources>
-          EOF
-
-          # Strings
-          cat > IntervalRunner/app/src/main/res/values/strings.xml << 'EOF'
-          <resources>
-              <string name="app_name">Interval Runner</string>
-          </resources>
-          EOF
-
-          # Adaptive icon resources (crisp)
-          cat > IntervalRunner/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
-          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-              <background android:drawable="@color/ic_launcher_background"/>
-              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
-          </adaptive-icon>
-          EOF
-
-          cat > IntervalRunner/app/src/main/res/values/ic_launcher_background.xml << 'EOF'
-          <resources>
-              <color name="ic_launcher_background">#000000</color>
-          </resources>
-          EOF
-
-          cat > IntervalRunner/app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
-          <vector xmlns:android="http://schemas.android.com/apk/res/android"
-              android:width="108dp" android:height="108dp"
-              android:viewportWidth="108" android:viewportHeight="108">
-              <!-- green circle + plus symbol (simple, sharp) -->
-              <path android:fillColor="#4CAF50"
-                  android:pathData="M54,8C28,8 8,28 8,54s20,46 46,46 46,-20 46,-46S80,8 54,8z"/>
-              <path android:fillColor="#FFFFFF"
-                  android:pathData="M49,36h10v18h18v10H59v18H49V64H31V54h18V36z"/>
-          </vector>
-          EOF
-
-          # MainActivity with layout fixes + saved inputs + prep default 30s
-          cat > IntervalRunner/app/src/main/java/com/craig/intervalrunner/MainActivity.kt << 'EOF'
+          cat > app/src/main/java/com/craig/intervalrunner/MainActivity.kt <<'EOF'
           package com.craig.intervalrunner
 
           import android.content.Context
-          import android.media.AudioManager
-          import android.media.ToneGenerator
           import android.os.Bundle
-          import android.os.VibrationEffect
-          import android.os.Vibrator
-          import android.speech.tts.TextToSpeech
-          import android.view.WindowManager
           import androidx.activity.ComponentActivity
           import androidx.activity.compose.setContent
+          import androidx.compose.animation.AnimatedContent
+          import androidx.compose.animation.core.tween
           import androidx.compose.foundation.background
+          import androidx.compose.foundation.horizontalScroll
           import androidx.compose.foundation.layout.*
-          import androidx.compose.foundation.layout.statusBarsPadding
-          import androidx.compose.foundation.lazy.LazyRow
-          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.rememberScrollState
+          import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
           import androidx.compose.runtime.saveable.rememberSaveable
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
           import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.input.TextFieldValue
           import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import kotlinx.coroutines.Job
           import kotlinx.coroutines.delay
-          import java.util.Locale
-          import kotlin.math.max
-          import kotlin.math.min
-
-          data class Segment(val kind: Kind, val lengthSec: Int) {
-              enum class Kind { FAST, SLOW }
-          }
-
-          private const val PREFS = "interval_prefs"
-          private const val K_FAST = "fastMin"
-          private const val K_SLOW = "slowMin"
-          private const val K_CYCLES = "cycles"
-          private const val K_PREP = "prepSec"
+          import kotlinx.coroutines.launch
 
           class MainActivity : ComponentActivity() {
-              private var tts: TextToSpeech? = null
-              private var tone: ToneGenerator? = null
-
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
+                  setContent { IntervalRunnerApp() }
+              }
+          }
 
-                  // Keep screen on
-                  window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+          @Composable
+          private fun IntervalRunnerApp() {
+              MaterialTheme(
+                  colorScheme = darkColorScheme(
+                      primary = Color(0xFFB59BFF),
+                      onPrimary = Color(0xFF000000),
+                      background = Color(0xFF1C1A21),
+                      onBackground = Color(0xFFFFFFFF),
+                      surface = Color(0xFF3A3840),
+                      onSurface = Color(0xFFCFCED6)
+                  )
+              ) {
+                  Surface(
+                      color = MaterialTheme.colorScheme.background,
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .systemBarsPadding()
+                          .navigationBarsPadding()
+                  ) {
+                      IntervalScreen()
+                  }
+              }
+          }
 
-                  val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                  val defaultFast = 3
-                  val defaultSlow = 3
-                  val defaultCycles = 5
-                  val defaultPrep = 30 // ✅ new default
+          @Composable
+          private fun IntervalScreen() {
+              val ctx = LocalContext.current
+              val prefs = remember { ctx.getSharedPreferences("interval_runner", Context.MODE_PRIVATE) }
 
-                  val startFast = prefs.getInt(K_FAST, defaultFast)
-                  val startSlow = prefs.getInt(K_SLOW, defaultSlow)
-                  val startCycles = prefs.getInt(K_CYCLES, defaultCycles)
-                  val startPrep = prefs.getInt(K_PREP, defaultPrep)
+              var fastMin by rememberSaveable { mutableStateOf(prefs.getInt("fast", 3)) }
+              var slowMin by rememberSaveable { mutableStateOf(prefs.getInt("slow", 3)) }
+              var cycles by rememberSaveable { mutableStateOf(prefs.getInt("cycles", 5)) }
+              var prepSec by rememberSaveable { mutableStateOf(prefs.getInt("prep", 30)) } // default 30s
 
-                  tts = TextToSpeech(this) { status ->
-                      if (status == TextToSpeech.SUCCESS) {
-                          tts?.language = Locale.UK
-                          tts?.setSpeechRate(1.0f)
+              LaunchedEffect(fastMin, slowMin, cycles, prepSec) {
+                  prefs.edit().apply {
+                      putInt("fast", fastMin.coerceAtLeast(1))
+                      putInt("slow", slowMin.coerceAtLeast(1))
+                      putInt("cycles", cycles.coerceAtLeast(1))
+                      putInt("prep", prepSec.coerceAtLeast(0))
+                  }.apply()
+              }
+
+              val phases by remember(fastMin, slowMin, cycles, prepSec) {
+                  mutableStateOf(buildPhases(fastMin, slowMin, cycles, prepSec))
+              }
+
+              var phaseIndex by rememberSaveable { mutableStateOf(0) }
+              var remaining by rememberSaveable { mutableStateOf(phases.getOrNull(0)?.seconds ?: 0) }
+              var running by rememberSaveable { mutableStateOf(false) }
+              var tickJob by remember { mutableStateOf<Job?>(null) }
+              val scope = rememberCoroutineScope()
+
+              fun startPhase(i: Int) {
+                  phaseIndex = i.coerceIn(0, phases.lastIndex)
+                  remaining = phases[phaseIndex].seconds
+              }
+
+              fun startOrResume() {
+                  running = true
+                  tickJob?.cancel()
+                  tickJob = scope.launch {
+                      while (running) {
+                          delay(1000)
+                          if (remaining > 0) remaining--
+                          if (remaining == 0) {
+                              running = false
+                              if (phaseIndex < phases.lastIndex) {
+                                  startPhase(phaseIndex + 1)
+                                  running = true
+                              } else {
+                                  cancel()
+                              }
+                          }
                       }
                   }
-                  tone = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
+              }
 
-                  setContent {
-                      MaterialTheme(colorScheme = darkColorScheme()) {
-                          IntervalApp(
-                              initialFastMin = startFast,
-                              initialSlowMin = startSlow,
-                              initialCycles = startCycles,
-                              initialPrepSec = startPrep,
-                              onSave = { f, s, c, p ->
-                                  prefs.edit()
-                                      .putInt(K_FAST, f)
-                                      .putInt(K_SLOW, s)
-                                      .putInt(K_CYCLES, c)
-                                      .putInt(K_PREP, p)
-                                      .apply()
-                              },
-                              speak = { text -> speak(text) },
-                              beep = { fast -> beep(fast) },
-                              vibrate = { pattern -> vibrate(pattern) }
+              fun pause() {
+                  running = false
+                  tickJob?.cancel()
+                  tickJob = null
+              }
+
+              fun reset() {
+                  pause()
+                  startPhase(0)
+              }
+
+              LaunchedEffect(phases) { startPhase(0) }
+
+              val scroll = rememberScrollState()
+
+              Column(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .padding(horizontal = 20.dp, vertical = 20.dp)
+              ) {
+                  Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      verticalAlignment = Alignment.CenterVertically
+                  ) {
+                      Text(
+                          "Interval Runner",
+                          style = MaterialTheme.typography.titleLarge.copy(
+                              color = MaterialTheme.colorScheme.onBackground,
+                              fontSize = 28.sp,
+                              fontWeight = FontWeight.Bold
+                          ),
+                          modifier = Modifier.weight(1f)
+                      )
+                      StatusPill(text = phases.getOrNull(phaseIndex)?.label ?: "PREP")
+                  }
+
+                  Spacer(Modifier.height(16.dp))
+
+                  Row(Modifier.fillMaxWidth()) {
+                      BoxedIntField("Fast (min)", fastMin, { fastMin = it }, Modifier.weight(1f))
+                      Spacer(Modifier.width(10.dp))
+                      BoxedIntField("Slow (min)", slowMin, { slowMin = it }, Modifier.weight(1f))
+                      Spacer(Modifier.width(10.dp))
+                      BoxedIntField("Cycles", cycles, { cycles = it }, Modifier.weight(1f))
+                      Spacer(Modifier.width(10.dp))
+                      BoxedIntField("Prep (sec)", prepSec, { prepSec = it }, Modifier.weight(1f))
+                  }
+
+                  Spacer(Modifier.height(16.dp))
+
+                  Box(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .weight(1f, fill = true)
+                          .clip(RoundedCornerShape(16.dp))
+                          .background(MaterialTheme.colorScheme.surface),
+                      contentAlignment = Alignment.Center
+                  ) {
+                      Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                          AnimatedContent(
+                              targetState = remaining,
+                              transitionSpec = { tween(durationMillis = 200) },
+                              label = "timer"
+                          ) {
+                              Text(
+                                  text = format(it),
+                                  fontSize = 88.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  color = MaterialTheme.colorScheme.onBackground,
+                                  textAlign = TextAlign.Center
+                              )
+                          }
+                          Spacer(Modifier.height(8.dp))
+                          Text(
+                              text = subtitleFor(phases.getOrNull(phaseIndex)?.kind),
+                              color = MaterialTheme.colorScheme.onSurface
                           )
                       }
                   }
-              }
 
-              private fun speak(text: String) {
-                  try { tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "utt") } catch (_: Throwable) {}
-              }
-              private fun beep(fast: Boolean) {
-                  try {
-                      val tg = tone ?: return
-                      val toneType = if (fast) ToneGenerator.TONE_SUP_RADIO_ACK else ToneGenerator.TONE_PROP_BEEP
-                      tg.startTone(toneType, 250)
-                  } catch (_: Throwable) {}
-              }
-              private fun vibrate(pattern: LongArray) {
-                  val vib = getSystemService(VIBRATOR_SERVICE) as Vibrator
-                  try {
-                      if (android.os.Build.VERSION.SDK_INT >= 26) {
-                          vib.vibrate(VibrationEffect.createWaveform(pattern, -1))
-                      } else {
-                          @Suppress("DEPRECATION") vib.vibrate(pattern, -1)
-                      }
-                  } catch (_: Throwable) {}
-              }
-              override fun onDestroy() {
-                  super.onDestroy()
-                  tts?.stop(); tts?.shutdown(); tone?.release()
-              }
-          }
+                  Spacer(Modifier.height(16.dp))
 
-          @Composable
-          fun IntervalApp(
-              initialFastMin: Int,
-              initialSlowMin: Int,
-              initialCycles: Int,
-              initialPrepSec: Int,
-              onSave: (Int, Int, Int, Int) -> Unit,
-              speak: (String) -> Unit,
-              beep: (Boolean) -> Unit,
-              vibrate: (LongArray) -> Unit
-          ) {
-              var fastMin by rememberSaveable { mutableStateOf(initialFastMin) }
-              var slowMin by rememberSaveable { mutableStateOf(initialSlowMin) }
-              var cycles by rememberSaveable { mutableStateOf(initialCycles) }
-              var prepSec by rememberSaveable { mutableStateOf(initialPrepSec) }
+                  Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                      FilledTonalButton(
+                          onClick = { if (running) pause() else startOrResume() },
+                          modifier = Modifier.weight(1f)
+                      ) { Text(if (running) "Pause" else "Start") }
 
-              // Persist whenever user changes any value
-              LaunchedEffect(fastMin, slowMin, cycles, prepSec) {
-                  onSave(fastMin, slowMin, cycles, prepSec)
-              }
+                      Spacer(Modifier.width(12.dp))
 
-              val segments = remember(fastMin, slowMin, cycles) {
-                  buildList {
-                      repeat(cycles) {
-                          add(Segment(Segment.Kind.FAST, fastMin * 60))
-                          add(Segment(Segment.Kind.SLOW, slowMin * 60))
+                      Button(onClick = { reset() }, modifier = Modifier.weight(1f)) {
+                          Text("Reset")
                       }
                   }
-              }
-              val totalSec = segments.sumOf { it.lengthSec }
-              var currentIndex by remember { mutableStateOf(-1) } // -1 = prep
-              var secLeft by remember { mutableStateOf(prepSec) }
-              var running by remember { mutableStateOf(false) }
-              var finished by remember { mutableStateOf(false) }
 
-              LaunchedEffect(currentIndex) {
-                  if (currentIndex >= 0 && currentIndex < segments.size) {
-                      val seg = segments[currentIndex]
-                      beep(seg.kind == Segment.Kind.FAST)
-                      vibrate(longArrayOf(100, 50, 100))
-                      speak(if (seg.kind == Segment.Kind.FAST) "Fast pace" else "Slow pace")
-                  }
-              }
+                  Spacer(Modifier.height(12.dp))
 
-              LaunchedEffect(running, secLeft, currentIndex, segments) {
-                  while (running) {
-                      delay(1000)
-                      secLeft -= 1
-                      if (currentIndex == -1 && secLeft <= 0) {
-                          currentIndex = 0
-                          secLeft = segments.getOrNull(0)?.lengthSec ?: 0
-                      } else if (currentIndex >= 0 && secLeft <= 0) {
-                          val next = currentIndex + 1
-                          if (next < segments.size) {
-                              currentIndex = next
-                              secLeft = segments[next].lengthSec
-                          } else {
-                              running = false
-                              finished = true
-                              beep(true); delay(220); beep(true); delay(220); beep(false)
-                              vibrate(longArrayOf(200,100,200,100,200))
-                              speak("Workout complete")
-                          }
-                      }
-                  }
-              }
-
-              LaunchedEffect(fastMin, slowMin, cycles, prepSec) {
-                  if (!running) {
-                      currentIndex = -1
-                      secLeft = prepSec
-                      finished = false
-                  }
-              }
-
-              val elapsedSec = when {
-                  currentIndex < 0 -> 0
-                  currentIndex >= segments.size -> totalSec
-                  else -> {
-                      val past = segments.take(currentIndex).sumOf { it.lengthSec }
-                      val nowLen = segments.getOrNull(currentIndex)?.lengthSec ?: 0
-                      past + (nowLen - secLeft)
-                  }
-              }
-              val pct = if (totalSec == 0) 0 else min(100, max(0, (elapsedSec * 100) / totalSec))
-              val currentKind = when {
-                  currentIndex == -1 -> "PREP"
-                  currentIndex >= segments.size -> "DONE"
-                  else -> segments[currentIndex].kind.name
-              }
-
-              Surface(
-                  modifier = Modifier
-                      .fillMaxSize()
-                      .background(Color(0xFF0B0B0E))
-                      .padding(16.dp)
-              ) {
-                  Column(
-                      horizontalAlignment = Alignment.CenterHorizontally,
-                      verticalArrangement = Arrangement.Top,
+                  Row(
                       modifier = Modifier
-                          .fillMaxSize()
-                          .statusBarsPadding()   // push content below status bar
+                          .fillMaxWidth()
+                          .horizontalScroll(scroll)
                   ) {
-                      Text("Interval Runner",
-                           style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold))
-
-                      Spacer(Modifier.height(12.dp))
-
-                      // Inputs
-                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                          NumberField("Fast (min)", fastMin, { fastMin = it.coerceIn(1, 60) }, modifier = Modifier.weight(1f))
-                          NumberField("Slow (min)", slowMin, { slowMin = it.coerceIn(1, 60) }, modifier = Modifier.weight(1f))
-                          NumberField("Cycles", cycles, { cycles = it.coerceIn(1, 30) }, modifier = Modifier.weight(1f))
-                          NumberField("Prep (sec)", prepSec, { prepSec = it.coerceIn(0, 60) }, modifier = Modifier.weight(1f))
-                      }
-
-                      Spacer(Modifier.height(12.dp))
-
-                      // Big status/timer card
-                      Card(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                          Column(
-                              Modifier.padding(16.dp).fillMaxSize(),
-                              horizontalAlignment = Alignment.CenterHorizontally,
-                              verticalArrangement = Arrangement.Center
-                          ) {
-                              Text(mmss(secLeft),
-                                   style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Black),
-                                   textAlign = TextAlign.Center)
-                              Spacer(Modifier.height(8.dp))
-                              Text(
-                                  when (currentKind) {
-                                      "FAST" -> "Fast pace — brisk walk."
-                                      "SLOW" -> "Slow pace — recovery walk."
-                                      "PREP" -> "Get ready…"
-                                      else -> "All done!"
-                                  },
-                                  color = Color(0xFF9EA3AF),
-                                  style = MaterialTheme.typography.titleLarge,
-                                  textAlign = TextAlign.Center
-                              )
-                              Spacer(Modifier.height(12.dp))
-                              LinearProgressIndicator(progress = pct / 100f, modifier = Modifier.fillMaxWidth().height(12.dp))
-                          }
-                      }
-
-                      Spacer(Modifier.height(12.dp))
-
-                      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                          if (!running) {
-                              Button(onClick = { beep(true); running = true }) {
-                                  Text(if (currentIndex == -1) "Start" else if (finished) "Restart" else "Resume")
-                              }
-                          } else {
-                              OutlinedButton(onClick = { running = false }) { Text("Pause") }
-                          }
-                          OutlinedButton(onClick = {
-                              running = false; currentIndex = -1; secLeft = prepSec; finished = false
-                          }) { Text("Reset") }
-                      }
-
-                      Spacer(Modifier.height(12.dp))
-
-                      LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                          itemsIndexed(segments) { idx, seg ->
-                              val bg = if (seg.kind == Segment.Kind.FAST) Color(0x2234D399) else Color(0x2260A5FA)
-                              Card(colors = CardDefaults.cardColors(containerColor = bg)) {
-                                  Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                      Text(seg.kind.name, fontWeight = FontWeight.SemiBold)
-                                      Text(mmss(seg.lengthSec), color = Color(0xFF9EA3AF))
-                                      Text("#${idx + 1}", color = Color(0xFF6B7280))
-                                  }
-                              }
-                          }
+                      phases.forEachIndexed { idx, p ->
+                          SequenceChip(
+                              label = when (p.kind) {
+                                  Kind.PREP -> "PREP ${p.seconds}s"
+                                  Kind.FAST -> "FAST ${format(p.seconds)}"
+                                  Kind.SLOW -> "SLOW ${format(p.seconds)}"
+                              },
+                              dim = idx < phaseIndex
+                          )
+                          Spacer(Modifier.width(8.dp))
                       }
                   }
               }
           }
 
           @Composable
-          private fun NumberField(
+          private fun StatusPill(text: String) {
+              Box(
+                  modifier = Modifier
+                      .clip(RoundedCornerShape(12.dp))
+                      .background(MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f))
+                      .padding(horizontal = 12.dp, vertical = 6.dp)
+              ) {
+                  Text(text, color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
+              }
+          }
+
+          @Composable
+          private fun BoxedIntField(
               label: String,
               value: Int,
               onChange: (Int) -> Unit,
               modifier: Modifier = Modifier
           ) {
-              var text by rememberSaveable(value) { mutableStateOf(value.toString()) }
+              var tf by remember { mutableStateOf(TextFieldValue(value.toString())) }
+              LaunchedEffect(value) {
+                  if (tf.text != value.toString()) tf = TextFieldValue(value.toString())
+              }
+
               OutlinedTextField(
-                  value = text,
+                  modifier = modifier,
+                  value = tf,
                   onValueChange = {
-                      text = it.filter { ch -> ch.isDigit() }.take(3)
-                      text.toIntOrNull()?.let(onChange)
+                      tf = it
+                      val parsed = it.text.filter(Char::isDigit).toIntOrNull()
+                      if (parsed != null) onChange(parsed)
                   },
                   label = { Text(label) },
                   singleLine = true,
-                  modifier = modifier.fillMaxWidth()
+                  shape = RoundedCornerShape(12.dp),
+                  colors = OutlinedTextFieldDefaults.colors(
+                      focusedContainerColor = MaterialTheme.colorScheme.surface,
+                      unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                      focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                      unfocusedTextColor = MaterialTheme.colorScheme.onBackground
+                  )
               )
           }
 
-          private fun mmss(s: Int): String {
-              val m = (s / 60).coerceAtLeast(0)
-              val ss = (s % 60).coerceAtLeast(0)
-              return "%02d:%02d".format(m, ss)
+          @Composable
+          private fun SequenceChip(label: String, dim: Boolean) {
+              val bg = when {
+                  label.startsWith("FAST") -> Color(0xFF183C34)
+                  label.startsWith("SLOW") -> Color(0xFF262E44)
+                  else -> MaterialTheme.colorScheme.surface
+              }
+              Box(
+                  modifier = Modifier
+                      .clip(RoundedCornerShape(10.dp))
+                      .background(bg)
+                      .padding(horizontal = 14.dp, vertical = 8.dp)
+                      .then(if (dim) Modifier.alpha(0.4f) else Modifier)
+              ) {
+                  Text(label, color = MaterialTheme.colorScheme.onBackground)
+              }
+          }
+
+          private enum class Kind { PREP, FAST, SLOW }
+          private data class Phase(val kind: Kind, val seconds: Int, val label: String)
+
+          private fun buildPhases(fastMin: Int, slowMin: Int, cycles: Int, prepSec: Int): List<Phase> {
+              val list = mutableListOf<Phase>()
+              if (prepSec > 0) list += Phase(Kind.PREP, prepSec, "PREP")
+              repeat(cycles.coerceAtLeast(1)) {
+                  list += Phase(Kind.FAST, fastMin.coerceAtLeast(1) * 60, "FAST")
+                  list += Phase(Kind.SLOW, slowMin.coerceAtLeast(1) * 60, "SLOW")
+              }
+              return list
+          }
+
+          private fun subtitleFor(kind: Kind?): String = when (kind) {
+              Kind.PREP -> "Get ready…"
+              Kind.FAST -> "Fast pace — brisk run."
+              Kind.SLOW -> "Slow pace — recovery walk."
+              else -> ""
+          }
+
+          private fun format(totalSeconds: Int): String {
+              val m = totalSeconds / 60
+              val s = totalSeconds % 60
+              return "%02d:%02d".format(m, s)
           }
           EOF
 
-      - name: Ensure Gradle wrapper and build
-        working-directory: IntervalRunner
-        run: |
-          if [ ! -f ./gradlew ]; then
-            gradle wrapper --gradle-version 8.7
-          fi
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          # Fitness-style launcher icon
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/black"/>
+              <foreground android:drawable="@drawable/ic_dumbbell"/>
+              <monochrome android:drawable="@drawable/ic_dumbbell"/>
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@android:color/black"/>
+              <foreground android:drawable="@drawable/ic_dumbbell"/>
+              <monochrome android:drawable="@drawable/ic_dumbbell"/>
+          </adaptive-icon>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_dumbbell.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FFFFFFFF"
+                  android:pathData="M3,10h2v4H3v-4zM5,9h2v6H5V9zM7,10h2v4H7v-4zM9,11h6v2H9v-2zM15,10h2v4h-2v-4zM17,9h2v6h-2V9zM19,10h2v4h-2v-4z"/>
+          </vector>
+          EOF
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.7
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: IntervalRunner-debug-apk
-          path: IntervalRunner/app/build/outputs/apk/debug/app-debug.apk
+          name: interval-runner-apk
+          path: app/build/outputs/apk/debug/*.apk
