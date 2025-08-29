@@ -18,7 +18,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: 'gradle'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -170,15 +169,6 @@ jobs:
           import kotlinx.coroutines.delay
           import kotlinx.coroutines.launch
 
-          /**
-           * Single-file Compose app.
-           * - Safe insets (systemBarsPadding, navigationBarsPadding)
-           * - Large timer text
-           * - Top-right status pill
-           * - Inputs persist via SharedPreferences
-           * - Prep default = 30s
-           * - Sequence chips
-           */
           class MainActivity : ComponentActivity() {
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
