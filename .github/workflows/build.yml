@@ -1,4 +1,4 @@
-name: Build Android APK (Interval Runner - single file)
+name: Build Android APK (Interval Runner - diagnostic)
 
 on:
   workflow_dispatch:
@@ -28,11 +28,11 @@ jobs:
           unzip -q gradle.zip -d $HOME/gradle
           echo "$HOME/gradle/gradle-8.7/bin" >> $GITHUB_PATH
 
-      # --- NEW: make sure SDK platforms/build-tools are present ---
       - name: Accept licenses & install Android 34 packages
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager --list | sed -n '1,120p'
 
       - name: Generate Android project files
         shell: bash
@@ -75,6 +75,7 @@ jobs:
           android {
               namespace = "com.craig.intervalrunner"
               compileSdk = 34
+              buildToolsVersion = "34.0.0"
 
               defaultConfig {
                   applicationId = "com.craig.intervalrunner"
@@ -86,16 +87,16 @@ jobs:
 
               buildFeatures { compose = true }
 
-              composeOptions { kotlinCompilerExtensionVersion = "1.5.14" } // Kotlin 1.9.24
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 
-              // Java 17 bytecode to match Kotlin 17
+              // Java 17 bytecode
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
           }
 
-          // Kotlin toolchain + jvmTarget = 17
+          // Kotlin toolchain + bytecode
           kotlin { jvmToolchain(17) }
           tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
               kotlinOptions.jvmTarget = "17"
@@ -212,7 +213,7 @@ jobs:
               var fastMin by rememberSaveable { mutableStateOf(prefs.getInt("fast", 3)) }
               var slowMin by rememberSaveable { mutableStateOf(prefs.getInt("slow", 3)) }
               var cycles by rememberSaveable { mutableStateOf(prefs.getInt("cycles", 5)) }
-              var prepSec by rememberSaveable { mutableStateOf(prefs.getInt("prep", 30)) } // default 30s
+              var prepSec by rememberSaveable { mutableStateOf(prefs.getInt("prep", 30)) }
 
               LaunchedEffect(fastMin, slowMin, cycles, prepSec) {
                   prefs.edit().apply {
@@ -248,24 +249,15 @@ jobs:
                           if (remaining == 0) {
                               running = false
                               if (phaseIndex < phases.lastIndex) {
-                                  startPhase(phaseIndex + 1)
-                                  running = true
-                              } else {
-                                  cancel()
-                              }
+                                  startPhase(phaseIndex + 1); running = true
+                              } else cancel()
                           }
                       }
                   }
               }
 
-              fun pause() {
-                  running = false
-                  tickJob?.cancel()
-                  tickJob = null
-              }
-
+              fun pause() { running = false; tickJob?.cancel(); tickJob = null }
               fun reset() { pause(); startPhase(0) }
-
               LaunchedEffect(phases) { startPhase(0) }
 
               val scroll = rememberScrollState()
@@ -343,11 +335,8 @@ jobs:
                           modifier = Modifier.weight(1f)
                       ) { Text(if (running) "Pause" else "Start") }
 
-                      Spacer(Modifier.width(12.dp))
-
-                      Button(onClick = { reset() }, modifier = Modifier.weight(1f)) {
-                          Text("Reset")
-                      }
+                  Spacer(Modifier.width(12.dp))
+                      Button(onClick = { reset() }, modifier = Modifier.weight(1f)) { Text("Reset") }
                   }
 
                   Spacer(Modifier.height(12.dp))
@@ -392,9 +381,7 @@ jobs:
               modifier: Modifier = Modifier
           ) {
               var tf by remember { mutableStateOf(TextFieldValue(value.toString())) }
-              LaunchedEffect(value) {
-                  if (tf.text != value.toString()) tf = TextFieldValue(value.toString())
-              }
+              LaunchedEffect(value) { if (tf.text != value.toString()) tf = TextFieldValue(value.toString()) }
               OutlinedTextField(
                   modifier = modifier,
                   value = tf,
@@ -449,7 +436,7 @@ jobs:
           private fun subtitleFor(kind: Kind?): String = when (kind) {
               Kind.PREP -> "Get ready…"
               Kind.FAST -> "Fast pace — brisk run."
-              Kind.SLOW -> "Slow pace — recovery walk."
+              Kind.SLOW -> "SLOW pace — recovery walk."
               else -> ""
           }
 
@@ -460,7 +447,7 @@ jobs:
           }
           EOF
 
-          # Fitness-style launcher icon
+          # Icons
           cat > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
@@ -494,16 +481,25 @@ jobs:
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.7
 
-      - name: Sanity check versions
+      - name: Print tool versions
         run: |
           java -version
           ./gradlew -version
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --warning-mode=all
+      - name: Build Debug APK (verbose)
+        run: |
+          set -e
+          ./gradlew assembleDebug --info -S | tee build.log
+          echo "----- FIRST FAILURE BLOCK -----"
+          awk '/FAILURE: Build failed with an exception\./,0{print}' build.log | head -n 120
+          echo "----- LAST 80 LINES (COMPILER) -----"
+          tail -n 80 build.log
 
-      - name: Upload APK artifact
+      - name: Upload APK artifact (if present)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: interval-runner-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: interval-runner-apk-or-logs
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            build.log
