@@ -28,6 +28,12 @@ jobs:
           unzip -q gradle.zip -d $HOME/gradle
           echo "$HOME/gradle/gradle-8.7/bin" >> $GITHUB_PATH
 
+      # --- NEW: make sure SDK platforms/build-tools are present ---
+      - name: Accept licenses & install Android 34 packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
       - name: Generate Android project files
         shell: bash
         run: |
@@ -80,18 +86,16 @@ jobs:
 
               buildFeatures { compose = true }
 
-              composeOptions {
-                  kotlinCompilerExtensionVersion = "1.5.14" // Kotlin 1.9.24 compat
-              }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.14" } // Kotlin 1.9.24
 
-              // Align Java bytecode to 17
+              // Java 17 bytecode to match Kotlin 17
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
               }
           }
 
-          // Align Kotlin to 17 + toolchain
+          // Kotlin toolchain + jvmTarget = 17
           kotlin { jvmToolchain(17) }
           tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
               kotlinOptions.jvmTarget = "17"
@@ -260,10 +264,7 @@ jobs:
                   tickJob = null
               }
 
-              fun reset() {
-                  pause()
-                  startPhase(0)
-              }
+              fun reset() { pause(); startPhase(0) }
 
               LaunchedEffect(phases) { startPhase(0) }
 
@@ -394,7 +395,6 @@ jobs:
               LaunchedEffect(value) {
                   if (tf.text != value.toString()) tf = TextFieldValue(value.toString())
               }
-
               OutlinedTextField(
                   modifier = modifier,
                   value = tf,
@@ -494,16 +494,13 @@ jobs:
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.7
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses
-
       - name: Sanity check versions
         run: |
           java -version
           ./gradlew -version
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --warning-mode=all
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
