@@ -31,6 +31,8 @@ jobs:
           set -e
           mkdir -p IntervalRunner/app/src/main/java/com/craig/intervalrunner
           mkdir -p IntervalRunner/app/src/main/res/values
+          mkdir -p IntervalRunner/app/src/main/res/mipmap-anydpi-v26
+          mkdir -p IntervalRunner/app/src/main/res/drawable
 
           cat > IntervalRunner/settings.gradle.kts << 'EOF'
           pluginManagement {
@@ -77,7 +79,7 @@ jobs:
                   testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
               }
 
-              // ✅ Make sure builds target Java 17
+              // Ensure Java/Kotlin use JVM 17
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
                   targetCompatibility = JavaVersion.VERSION_17
@@ -103,7 +105,7 @@ jobs:
               implementation(composeBom)
               androidTestImplementation(composeBom)
 
-              // Needed for Theme.Material3.* in XML
+              // For Theme.Material3
               implementation("com.google.android.material:material:1.12.0")
 
               implementation("androidx.core:core-ktx:1.13.1")
@@ -126,7 +128,7 @@ jobs:
           # No special rules required
           EOF
 
-          # No 'package=' here; AGP 8+ uses 'namespace' from Gradle
+          # Manifest (use our crisp adaptive icon)
           cat > IntervalRunner/app/src/main/AndroidManifest.xml << 'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.VIBRATE" />
@@ -137,7 +139,7 @@ jobs:
 
               <application
                   android:allowBackup="true"
-                  android:icon="@android:drawable/ic_dialog_info"
+                  android:icon="@mipmap/ic_launcher"
                   android:label="@string/app_name"
                   android:theme="@style/Theme.IntervalRunner">
                   <activity
@@ -153,6 +155,7 @@ jobs:
           </manifest>
           EOF
 
+          # Theme
           cat > IntervalRunner/app/src/main/res/values/themes.xml << 'EOF'
           <resources>
               <style name="Theme.IntervalRunner" parent="Theme.Material3.DayNight.NoActionBar">
@@ -162,15 +165,44 @@ jobs:
           </resources>
           EOF
 
+          # Strings
           cat > IntervalRunner/app/src/main/res/values/strings.xml << 'EOF'
           <resources>
               <string name="app_name">Interval Runner</string>
           </resources>
           EOF
 
+          # Adaptive icon resources (crisp)
+          cat > IntervalRunner/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml << 'EOF'
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background"/>
+              <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+          </adaptive-icon>
+          EOF
+
+          cat > IntervalRunner/app/src/main/res/values/ic_launcher_background.xml << 'EOF'
+          <resources>
+              <color name="ic_launcher_background">#000000</color>
+          </resources>
+          EOF
+
+          cat > IntervalRunner/app/src/main/res/drawable/ic_launcher_foreground.xml << 'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <!-- green circle + plus symbol (simple, sharp) -->
+              <path android:fillColor="#4CAF50"
+                  android:pathData="M54,8C28,8 8,28 8,54s20,46 46,46 46,-20 46,-46S80,8 54,8z"/>
+              <path android:fillColor="#FFFFFF"
+                  android:pathData="M49,36h10v18h18v10H59v18H49V64H31V54h18V36z"/>
+          </vector>
+          EOF
+
+          # MainActivity with layout fixes + saved inputs + prep default 30s
           cat > IntervalRunner/app/src/main/java/com/craig/intervalrunner/MainActivity.kt << 'EOF'
           package com.craig.intervalrunner
 
+          import android.content.Context
           import android.media.AudioManager
           import android.media.ToneGenerator
           import android.os.Bundle
@@ -182,10 +214,12 @@ jobs:
           import androidx.activity.compose.setContent
           import androidx.compose.foundation.background
           import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.layout.statusBarsPadding
           import androidx.compose.foundation.lazy.LazyRow
           import androidx.compose.foundation.lazy.itemsIndexed
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
+          import androidx.compose.runtime.saveable.rememberSaveable
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.graphics.Color
@@ -201,6 +235,12 @@ jobs:
               enum class Kind { FAST, SLOW }
           }
 
+          private const val PREFS = "interval_prefs"
+          private const val K_FAST = "fastMin"
+          private const val K_SLOW = "slowMin"
+          private const val K_CYCLES = "cycles"
+          private const val K_PREP = "prepSec"
+
           class MainActivity : ComponentActivity() {
               private var tts: TextToSpeech? = null
               private var tone: ToneGenerator? = null
@@ -210,6 +250,17 @@ jobs:
 
                   // Keep screen on
                   window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+                  val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                  val defaultFast = 3
+                  val defaultSlow = 3
+                  val defaultCycles = 5
+                  val defaultPrep = 30 // ✅ new default
+
+                  val startFast = prefs.getInt(K_FAST, defaultFast)
+                  val startSlow = prefs.getInt(K_SLOW, defaultSlow)
+                  val startCycles = prefs.getInt(K_CYCLES, defaultCycles)
+                  val startPrep = prefs.getInt(K_PREP, defaultPrep)
 
                   tts = TextToSpeech(this) { status ->
                       if (status == TextToSpeech.SUCCESS) {
@@ -222,6 +273,18 @@ jobs:
                   setContent {
                       MaterialTheme(colorScheme = darkColorScheme()) {
                           IntervalApp(
+                              initialFastMin = startFast,
+                              initialSlowMin = startSlow,
+                              initialCycles = startCycles,
+                              initialPrepSec = startPrep,
+                              onSave = { f, s, c, p ->
+                                  prefs.edit()
+                                      .putInt(K_FAST, f)
+                                      .putInt(K_SLOW, s)
+                                      .putInt(K_CYCLES, c)
+                                      .putInt(K_PREP, p)
+                                      .apply()
+                              },
                               speak = { text -> speak(text) },
                               beep = { fast -> beep(fast) },
                               vibrate = { pattern -> vibrate(pattern) }
@@ -250,7 +313,6 @@ jobs:
                       }
                   } catch (_: Throwable) {}
               }
-
               override fun onDestroy() {
                   super.onDestroy()
                   tts?.stop(); tts?.shutdown(); tone?.release()
@@ -259,14 +321,24 @@ jobs:
 
           @Composable
           fun IntervalApp(
+              initialFastMin: Int,
+              initialSlowMin: Int,
+              initialCycles: Int,
+              initialPrepSec: Int,
+              onSave: (Int, Int, Int, Int) -> Unit,
               speak: (String) -> Unit,
               beep: (Boolean) -> Unit,
               vibrate: (LongArray) -> Unit
           ) {
-              var fastMin by remember { mutableStateOf(3) }
-              var slowMin by remember { mutableStateOf(3) }
-              var cycles by remember { mutableStateOf(5) }
-              var prepSec by remember { mutableStateOf(5) }
+              var fastMin by rememberSaveable { mutableStateOf(initialFastMin) }
+              var slowMin by rememberSaveable { mutableStateOf(initialSlowMin) }
+              var cycles by rememberSaveable { mutableStateOf(initialCycles) }
+              var prepSec by rememberSaveable { mutableStateOf(initialPrepSec) }
+
+              // Persist whenever user changes any value
+              LaunchedEffect(fastMin, slowMin, cycles, prepSec) {
+                  onSave(fastMin, slowMin, cycles, prepSec)
+              }
 
               val segments = remember(fastMin, slowMin, cycles) {
                   buildList {
@@ -347,48 +419,54 @@ jobs:
                   Column(
                       horizontalAlignment = Alignment.CenterHorizontally,
                       verticalArrangement = Arrangement.Top,
-                      modifier = Modifier.fillMaxSize()
+                      modifier = Modifier
+                          .fillMaxSize()
+                          .statusBarsPadding()   // push content below status bar
                   ) {
-                      Text("Interval Runner", style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.ExtraBold))
-                      Spacer(Modifier.height(6.dp))
-                      Text("5× 3′ fast + 3′ slow (customisable). Voice + beeps at each change.",
-                           color = Color(0xFF9EA3AF), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
+                      Text("Interval Runner",
+                           style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.ExtraBold))
 
                       Spacer(Modifier.height(12.dp))
+
+                      // Inputs
                       Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                           NumberField("Fast (min)", fastMin, { fastMin = it.coerceIn(1, 60) }, modifier = Modifier.weight(1f))
                           NumberField("Slow (min)", slowMin, { slowMin = it.coerceIn(1, 60) }, modifier = Modifier.weight(1f))
                           NumberField("Cycles", cycles, { cycles = it.coerceIn(1, 30) }, modifier = Modifier.weight(1f))
-                          NumberField("Prep (sec)", prepSec, { prepSec = it.coerceIn(0, 30) }, modifier = Modifier.weight(1f))
+                          NumberField("Prep (sec)", prepSec, { prepSec = it.coerceIn(0, 60) }, modifier = Modifier.weight(1f))
                       }
 
-                      Spacer(Modifier.height(16.dp))
-                      Card {
-                          Column(Modifier.padding(16.dp)) {
-                              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                  Text("Status", color = Color(0xFF9EA3AF))
-                                  val badgeColor = when (currentKind) {
-                                      "FAST" -> Color(0xFF34D399)
-                                      "SLOW" -> Color(0xFF60A5FA)
-                                      "PREP" -> Color(0xFFF59E0B)
-                                      else -> Color(0xFFA78BFA)
-                                  }
-                                  AssistChip(onClick = {}, label = { Text(currentKind) },
-                                      colors = AssistChipDefaults.assistChipColors(labelColor = Color.Black, containerColor = badgeColor))
-                              }
+                      Spacer(Modifier.height(12.dp))
+
+                      // Big status/timer card
+                      Card(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                          Column(
+                              Modifier.padding(16.dp).fillMaxSize(),
+                              horizontalAlignment = Alignment.CenterHorizontally,
+                              verticalArrangement = Arrangement.Center
+                          ) {
+                              Text(mmss(secLeft),
+                                   style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Black),
+                                   textAlign = TextAlign.Center)
                               Spacer(Modifier.height(8.dp))
-                              Text(mmss(secLeft), style = MaterialTheme.typography.displayLarge.copy(fontWeight = FontWeight.Black))
-                              Spacer(Modifier.height(4.dp))
-                              Text(when (currentKind) { "FAST" -> "Fast pace — brisk walk."; "SLOW" -> "Slow pace — recovery walk."; "PREP" -> "Get ready…"; else -> "All done!" },
-                                   color = Color(0xFF9EA3AF))
+                              Text(
+                                  when (currentKind) {
+                                      "FAST" -> "Fast pace — brisk walk."
+                                      "SLOW" -> "Slow pace — recovery walk."
+                                      "PREP" -> "Get ready…"
+                                      else -> "All done!"
+                                  },
+                                  color = Color(0xFF9EA3AF),
+                                  style = MaterialTheme.typography.titleLarge,
+                                  textAlign = TextAlign.Center
+                              )
                               Spacer(Modifier.height(12.dp))
-                              LinearProgressIndicator(progress = pct / 100f, modifier = Modifier.fillMaxWidth().height(10.dp))
-                              Spacer(Modifier.height(4.dp))
-                              Text("$pct%", textAlign = TextAlign.End, modifier = Modifier.fillMaxWidth(), color = Color(0xFF9EA3AF))
+                              LinearProgressIndicator(progress = pct / 100f, modifier = Modifier.fillMaxWidth().height(12.dp))
                           }
                       }
 
                       Spacer(Modifier.height(12.dp))
+
                       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                           if (!running) {
                               Button(onClick = { beep(true); running = true }) {
@@ -397,10 +475,13 @@ jobs:
                           } else {
                               OutlinedButton(onClick = { running = false }) { Text("Pause") }
                           }
-                          OutlinedButton(onClick = { running = false; currentIndex = -1; secLeft = prepSec; finished = false }) { Text("Reset") }
+                          OutlinedButton(onClick = {
+                              running = false; currentIndex = -1; secLeft = prepSec; finished = false
+                          }) { Text("Reset") }
                       }
 
                       Spacer(Modifier.height(12.dp))
+
                       LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                           itemsIndexed(segments) { idx, seg ->
                               val bg = if (seg.kind == Segment.Kind.FAST) Color(0x2234D399) else Color(0x2260A5FA)
@@ -413,10 +494,6 @@ jobs:
                               }
                           }
                       }
-
-                      Spacer(Modifier.height(12.dp))
-                      Text("Tip: Keep the screen on and volume up. Disable battery saver for best timing accuracy.",
-                           color = Color(0xFF6B7280), style = MaterialTheme.typography.labelSmall)
                   }
               }
           }
@@ -428,7 +505,7 @@ jobs:
               onChange: (Int) -> Unit,
               modifier: Modifier = Modifier
           ) {
-              var text by remember(value) { mutableStateOf(value.toString()) }
+              var text by rememberSaveable(value) { mutableStateOf(value.toString()) }
               OutlinedTextField(
                   value = text,
                   onValueChange = {
